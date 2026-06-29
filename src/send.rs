@@ -24,7 +24,7 @@ impl std::fmt::Display for DiscoveredDevice {
     }
 }
 
-pub async fn run(file: Option<PathBuf>, device: Option<String>) -> Result<()> {
+pub async fn run(file: Option<PathBuf>, device: Option<String>, ip: Option<String>) -> Result<()> {
     let file_path = match file {
         Some(path) => path,
         None => {
@@ -37,18 +37,44 @@ pub async fn run(file: Option<PathBuf>, device: Option<String>) -> Result<()> {
         anyhow::bail!("File does not exist or is not a file: {:?}", file_path);
     }
 
-    let target_device = match device {
-        Some(dev_name) => {
-            println!("Looking for device '{}'...", dev_name);
-            find_device_by_name(&dev_name).await?
+    let target_device = if let Some(ip_addr) = ip {
+        let parts: Vec<&str> = ip_addr.split(':').collect();
+        if parts.len() != 2 {
+            anyhow::bail!("Invalid IP format. Expected IP:PORT (e.g. 192.168.1.5:8080)");
         }
-        None => {
-            println!("Scanning for devices...");
-            let devices = scan_for_devices().await?;
-            if devices.is_empty() {
-                anyhow::bail!("No devices found on the network.");
+        DiscoveredDevice {
+            name: "Direct IP Device".to_string(),
+            ip: parts[0].to_string(),
+            port: parts[1].parse().unwrap_or(8080),
+        }
+    } else if let Some(dev_name) = device {
+        println!("Looking for device '{}'...", dev_name);
+        find_device_by_name(&dev_name).await?
+    } else {
+        println!("Scanning for devices...");
+        let mut devices = scan_for_devices().await.unwrap_or_else(|_| vec![]);
+        
+        devices.insert(0, DiscoveredDevice {
+            name: "Enter IP Manually".to_string(),
+            ip: "".to_string(),
+            port: 0,
+        });
+
+        let selection = Select::new("Select a device to send to:", devices).prompt()?;
+        
+        if selection.name == "Enter IP Manually" {
+            let ip_addr = Text::new("Enter the device IP and port (e.g. 192.168.1.5:8080):").prompt()?;
+            let parts: Vec<&str> = ip_addr.split(':').collect();
+            if parts.len() != 2 {
+                anyhow::bail!("Invalid IP format. Expected IP:PORT (e.g. 192.168.1.5:8080)");
             }
-            Select::new("Select a device to send to:", devices).prompt()?
+            DiscoveredDevice {
+                name: "Direct IP Device".to_string(),
+                ip: parts[0].to_string(),
+                port: parts[1].parse().unwrap_or(8080),
+            }
+        } else {
+            selection
         }
     };
 

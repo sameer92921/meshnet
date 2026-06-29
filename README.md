@@ -2,14 +2,15 @@
 
 MeshNet is a blazing-fast, cross-platform command-line tool built with Rust that allows you to send files locally between connected devices (macOS, Linux, and Android via Termux) over your Wi-Fi network without requiring any central servers.
 
-It uses mDNS (ZeroConf/Bonjour) to automatically discover other MeshNet devices on your local network.
+It uses mDNS (ZeroConf/Bonjour) to automatically discover other MeshNet devices on your local network. It also supports direct IP entry if Android/routers block multicast discovery packets.
 
 ## Features
 
+- **Two-Way Communication**: By default, MeshNet runs in a unified mode. It listens for incoming files in the background while letting you send files interactively in the foreground.
 - **Blazing Fast**: Written in Rust, it streams files directly to disk using `tokio` and `axum`.
 - **Interactive Prompts**: Easily select the file you want to send and the destination device from a visual menu.
 - **Cross-Platform**: Compiles to a static binary that runs seamlessly on macOS, Linux, and Android (Termux).
-- **Zero Config**: No need to type IP addresses, devices discover each other automatically.
+- **Direct IP Fallback**: Android devices sometimes block mDNS discovery. You can easily bypass this by typing the IP address directly.
 
 ---
 
@@ -59,36 +60,49 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 ## Usage Guide
 
-### 1. Start the Receiver Daemon
-To receive files, you need to start the MeshNet daemon on the destination device.
-
+### Two-Way Interactive Mode (Recommended)
+Simply run the command with no arguments:
 ```bash
-meshnet serve
+meshnet
 ```
-*(If you are running it with cargo, use `cargo run --release -- serve`)*
+This automatically starts the receiver daemon in the background (printing your device's IP and Port) and opens an interactive prompt. From there, you can choose to send files, list devices, or manually enter an IP address to send a file to a device that mDNS couldn't discover (e.g., your Termux app).
 
-By default, files will be saved in the directory where you run the command. You can also specify a custom download path:
+### Manual CLI Commands
+If you prefer scripting or using manual arguments:
+
+**1. Start the Receiver Daemon (Blocking)**
 ```bash
 meshnet serve ~/Downloads/meshnet_files
 ```
 
-### 2. List Devices (Optional)
-To see a list of active MeshNet devices on your current Wi-Fi network:
-```bash
-meshnet list
-```
-
-### 3. Send a File (Interactive Mode)
-To send a file, simply run the send command on the sending device:
-```bash
-meshnet send
-```
-You will be greeted with an interactive prompt to:
-1. Type the path to the file you want to send.
-2. Select a discovered device from a visual menu.
-
-### 4. Send a File (Fast/CLI Mode)
-If you want to skip the interactive prompts, you can pass the file path and device name directly as arguments:
+**2. Send a File to a Discovered Device**
 ```bash
 meshnet send --file ./my_video.mp4 --device "Sameer-MacBook"
+```
+
+**3. Send a File via Direct IP (Bypassing Discovery)**
+```bash
+meshnet send --file ./my_video.mp4 --ip 192.168.1.15:8080
+```
+
+---
+
+## Updating to the Latest Version
+
+If you installed MeshNet by cloning from GitHub, you can easily update it to get new features and bug fixes.
+
+**On macOS / Linux:**
+```bash
+cd meshnet
+git pull origin main
+cargo build --release
+sudo mv target/release/meshnet /usr/local/bin/
+```
+
+**On Android (Termux):**
+```bash
+cd meshnet
+git pull origin main
+cargo build --release
+cp target/release/meshnet $PREFIX/bin/
 ```
