@@ -68,14 +68,23 @@ pub async fn run(receive_path: Option<PathBuf>) -> anyhow::Result<()> {
         }
     };
     let port = listener.local_addr()?.port();
+    let addr_str = format!("{}:{}", my_ip, port);
+    let save_str = receive_path.display().to_string();
 
-    println!("  ┌─────────────────────────────────────────┐");
-    println!("  │      ✦  Receiver is now active  ✦       │");
-    println!("  ├─────────────────────────────────────────┤");
-    println!("  │  Device   {}", pad_right(&device_name, 28));
-    println!("  │  Address  {}", pad_right(&format!("{}:{}", my_ip, port), 28));
-    println!("  │  Saving   {}", pad_right(&format!("{}", receive_path.display()), 28));
-    println!("  └─────────────────────────────────────────┘");
+    let rows = [
+        format!("  Device   {}", device_name),
+        format!("  Address  {}", addr_str),
+        format!("  Saving   {}", save_str),
+    ];
+    let inner_w = rows.iter().map(|r| r.len()).max().unwrap_or(30).max(30);
+
+    println!("  ┌{}┐", "─".repeat(inner_w + 2));
+    println!("  │{}│", center("✦  Receiver is now active  ✦", inner_w + 2));
+    println!("  ├{}┤", "─".repeat(inner_w + 2));
+    for row in &rows {
+        println!("  │{}{} │", row, " ".repeat(inner_w - row.len() + 1));
+    }
+    println!("  └{}┘", "─".repeat(inner_w + 2));
     println!("  Share your Address with the sender if discovery fails.\n");
 
     if let Ok(mdns) = ServiceDaemon::new() {
@@ -206,10 +215,14 @@ pub fn human_size(bytes: u64) -> String {
     }
 }
 
-fn pad_right(s: &str, width: usize) -> String {
+fn center(s: &str, width: usize) -> String {
     if s.len() >= width {
-        format!("{}│", &s[..width])
+        s.to_string()
     } else {
-        format!("{}{}│", s, " ".repeat(width - s.len()))
+        let pad = width - s.len();
+        let left = pad / 2;
+        let right = pad - left;
+        format!("{}{}{}", " ".repeat(left), s, " ".repeat(right))
     }
 }
+

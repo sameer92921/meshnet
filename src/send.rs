@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use anyhow::Result;
-use inquire::{Select, Text, autocompletion::Replacement};
+use inquire::{Select, Text};
 use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::Client;
 use tokio::fs::File;
@@ -10,67 +10,9 @@ use futures_util::TryStreamExt;
 use std::sync::Arc;
 use crate::list::{FoundDevice, scan_all};
 use crate::serve::{MESHNET_PORT, expand_tilde, human_size};
+use crate::completer::FilePathCompleter;
 
-#[derive(Clone, Default)]
-struct FilePathCompleter;
-
-impl inquire::Autocomplete for FilePathCompleter {
-    fn get_suggestions(&mut self, input: &str) -> std::result::Result<Vec<String>, inquire::CustomUserError> {
-        let expanded = expand_tilde(PathBuf::from(input));
-        let (dir, prefix) = if expanded.is_dir() {
-            (expanded.clone(), String::new())
-        } else {
-            let parent = expanded.parent().unwrap_or(std::path::Path::new(".")).to_path_buf();
-            let prefix = expanded
-                .file_name()
-                .map(|f| f.to_string_lossy().to_string())
-                .unwrap_or_default();
-            (parent, prefix)
-        };
-
-        let mut suggestions = Vec::new();
-        if let Ok(entries) = std::fs::read_dir(&dir) {
-            for entry in entries.flatten() {
-                let name = entry.file_name().to_string_lossy().to_string();
-                if prefix.is_empty() || name.to_lowercase().starts_with(&prefix.to_lowercase()) {
-                    let full = entry.path();
-                    let display = if input.starts_with("~/") {
-                        if let Some(home) = dirs_next::home_dir() {
-                            if let Ok(stripped) = full.strip_prefix(&home) {
-                                format!("~/{}", stripped.display())
-                            } else {
-                                full.display().to_string()
-                            }
-                        } else {
-                            full.display().to_string()
-                        }
-                    } else {
-                        full.display().to_string()
-                    };
-
-                    if full.is_dir() {
-                        suggestions.push(format!("{}/", display));
-                    } else {
-                        suggestions.push(display);
-                    }
-                }
-            }
-        }
-        suggestions.sort();
-        if suggestions.len() > 15 {
-            suggestions.truncate(15);
-        }
-        Ok(suggestions)
-    }
-
-    fn get_completion(
-        &mut self,
-        _input: &str,
-        highlighted_suggestion: Option<String>,
-    ) -> std::result::Result<Replacement, inquire::CustomUserError> {
-        Ok(highlighted_suggestion)
-    }
-}
+const READ_BUF_SIZE: usize = 256 * 1024; // 256 KB chunks for higher throughput
 
 pub async fn run(file: Option<PathBuf>, device: Option<String>, ip: Option<String>) -> Result<()> {
     let file_path = match file {
@@ -80,7 +22,7 @@ pub async fn run(file: Option<PathBuf>, device: Option<String>, ip: Option<Strin
                 .map(|p| p.display().to_string())
                 .unwrap_or_default();
             let raw = Text::new(&format!("File to send (cwd: {}):", cwd))
-                .with_help_message("Tab for autocomplete • ~ expands to home directory")
+                .with_help_message("Tab to autocomplete • ~ for home directory")
                 .with_autocomplete(FilePathCompleter)
                 .prompt()?;
             expand_tilde(PathBuf::from(raw.trim()))
@@ -187,7 +129,7 @@ async fn transfer_file(file_path: PathBuf, device: FoundDevice) -> Result<()> {
     );
 
     let pb_clone = pb.clone();
-    let stream = ReaderStream::new(file).inspect_ok(move |chunk| {
+    let stream = ReaderStream::with_capacity(file, READ_BUF_SIZE).inspect_ok(move |chunk| {
         pb_clone.inc(chunk.len() as u64);
     });
 

@@ -6,6 +6,7 @@ mod serve;
 mod list;
 mod send;
 mod discovery;
+mod completer;
 
 #[derive(Parser)]
 #[command(
@@ -117,7 +118,8 @@ async fn main() -> anyhow::Result<()> {
 
                 let raw = Text::new("Save received files to:")
                     .with_default(&cwd)
-                    .with_help_message("Press Enter for current dir, or type a path (~ supported)")
+                    .with_help_message("Tab to autocomplete • ~ for home directory • Enter for current dir")
+                    .with_autocomplete(completer::FilePathCompleter)
                     .prompt()?;
 
                 let trimmed = raw.trim();
