@@ -8,6 +8,7 @@ use std::net::IpAddr;
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 use serde::Deserialize;
+use indicatif::{ProgressBar, ProgressStyle};
 
 #[derive(Debug, Clone)]
 pub struct FoundDevice {
@@ -23,18 +24,13 @@ impl std::fmt::Display for FoundDevice {
         if self.os.is_empty() {
             write!(f, "{}  ({}:{})", label, self.ip, self.port)
         } else {
-            write!(f, "{}  [{os}]  {ip}:{port}",
-                label, os = self.os, ip = self.ip, port = self.port)
+            write!(f, "{}  [{}]  {}:{}", label, self.os, self.ip, self.port)
         }
     }
 }
 
 fn clean_name(raw: &str) -> String {
-    // Strip the mDNS suffix noise: "Hostname-xxxx._meshnet._tcp.local." -> "Hostname-xxxx"
-    raw.split('.')
-        .next()
-        .unwrap_or(raw)
-        .to_string()
+    raw.split('.').next().unwrap_or(raw).to_string()
 }
 
 #[derive(Deserialize)]
@@ -44,18 +40,28 @@ struct PingResponse {
 }
 
 pub async fn run() -> anyhow::Result<()> {
-    println!("\n  Scanning for MeshNet devices (mDNS + subnet scan)...");
+    let spinner = ProgressBar::new_spinner();
+    spinner.set_style(
+        ProgressStyle::default_spinner()
+            .template("  {spinner:.cyan} {msg}")
+            .unwrap(),
+    );
+    spinner.set_message("Scanning for MeshNet devices (mDNS + subnet)...");
+    spinner.enable_steady_tick(Duration::from_millis(80));
 
     let devices = scan_all().await;
+
+    spinner.finish_and_clear();
 
     if devices.is_empty() {
         println!("  No devices found.\n");
         println!("  Make sure the other device is running:  meshnet serve");
-        println!("  If discovery still fails, use:          meshnet send --ip <IP>:7878\n");
+        println!("  Or use a direct IP:                     meshnet send --ip <IP>:7878\n");
     } else {
         println!("  Found {} device(s):\n", devices.len());
         for d in &devices {
-            println!("    ●  {}  [{os}]  {}:{}", clean_name(&d.name), d.ip, d.port, os = d.os);
+            let os_tag = if d.os.is_empty() { "?" } else { &d.os };
+            println!("    ●  {}  [{}]  {}:{}", clean_name(&d.name), os_tag, d.ip, d.port);
         }
         println!();
     }
