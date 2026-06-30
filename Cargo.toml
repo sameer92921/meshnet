@@ -15,7 +15,8 @@ indicatif = "0.18.4"
 inquire = "0.9.4"
 local-ip-address = "0.6.13"
 mdns-sd = "0.20.1"
-reqwest = { version = "0.13.4", features = ["stream", "multipart"] }
+reqwest = { version = "0.13.4", features = ["stream", "multipart", "json"] }
+serde = { version = "1.0.228", features = ["derive"] }
 tokio = { version = "1.52.3", features = ["full"] }
 tokio-util = { version = "0.7.18", features = ["io"] }
 uuid = { version = "1.23.4", features = ["v4"] }
