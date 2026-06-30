@@ -1,108 +1,170 @@
 # MeshNet
 
-MeshNet is a blazing-fast, cross-platform command-line tool built with Rust that allows you to send files locally between connected devices (macOS, Linux, and Android via Termux) over your Wi-Fi network without requiring any central servers.
+> Fast, zero-config local file transfer for macOS, Linux & Android (Termux)
 
-It uses mDNS (ZeroConf/Bonjour) to automatically discover other MeshNet devices on your local network. It also supports direct IP entry if Android/routers block multicast discovery packets.
+MeshNet lets you send files between devices on the same Wi-Fi network — no cloud, no accounts, no configuration needed. It auto-discovers peers using mDNS and a direct subnet scan, so it works even on Android where mDNS is typically blocked.
+
+---
 
 ## Features
 
-- **Two-Way Communication**: By default, MeshNet runs in a unified mode. It listens for incoming files in the background while letting you send files interactively in the foreground.
-- **Blazing Fast**: Written in Rust, it streams files directly to disk using `tokio` and `axum`.
-- **Interactive Prompts**: Easily select the file you want to send and the destination device from a visual menu.
-- **Cross-Platform**: Compiles to a static binary that runs seamlessly on macOS, Linux, and Android (Termux).
-- **Direct IP Fallback**: Android devices sometimes block mDNS discovery. You can easily bypass this by typing the IP address directly.
+| | |
+|---|---|
+| ⚡ **Blazing fast** | Streams directly over TCP using async Rust |
+| 🔍 **Auto-discovery** | Finds peers via mDNS + subnet scan simultaneously |
+| 📱 **Android-ready** | Works on Termux without any special Android permissions |
+| 📝 **Direct IP fallback** | Type an IP manually if auto-discovery fails |
+| 🔁 **Two-way** | Every node sends and receives at the same time |
+| 🖥️ **Cross-platform** | macOS · Linux · Android (Termux) |
 
 ---
 
-## Setup Instructions
+## Quick Start
 
-### Prerequisites
-You need to have Rust and Cargo installed on your system.
-If you don't have it installed, run:
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+┌──────────── Device A (receiver) ────────────┐
+│  meshnet                                     │
+│  > Receiver is now active                   │
+│  > Address  192.168.1.7:7878                │
+└─────────────────────────────────────────────┘
+
+┌──────────── Device B (sender) ──────────────┐
+│  meshnet send                               │
+│  > Scanning for devices...                  │
+│  > Select: Device A [macos] 192.168.1.7     │
+│  > File: ~/Desktop/video.mp4               │
+│  > ████████████ 45.2 MB  done ✓            │
+└─────────────────────────────────────────────┘
 ```
 
-### 1. macOS & Linux Setup
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/sameer92921/meshnet.git
-   cd meshnet
-   ```
-2. Build the optimized release binary:
-   ```bash
-   cargo build --release
-   ```
-3. (Optional) Move the binary to your path to use it globally:
-   ```bash
-   sudo mv target/release/meshnet /usr/local/bin/
-   ```
+---
 
-### 2. Android (Termux) Setup
-1. Download and install [Termux](https://f-droid.org/en/packages/com.termux/) from F-Droid.
-2. Update packages and install Rust and Git:
-   ```bash
-   pkg update && pkg upgrade
-   pkg install git rust
-   ```
-3. Clone the repository and build:
-   ```bash
-   git clone https://github.com/sameer92921/meshnet.git
-   cd meshnet
-   cargo build --release
-   ```
-4. Copy the binary to your Termux bin folder:
-   ```bash
-   cp target/release/meshnet $PREFIX/bin/
-   ```
+## Installation
+
+### Prerequisites — install Rust
+
+| Platform | Command |
+|---|---|
+| macOS / Linux | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
+| Termux (Android) | `pkg update && pkg install git rust` |
+
+### Install MeshNet
+
+```bash
+git clone https://github.com/sameer92921/meshnet.git
+cd meshnet
+cargo build --release
+```
+
+**macOS / Linux** — install globally:
+```bash
+sudo cp target/release/meshnet /usr/local/bin/
+```
+
+**Termux (Android)** — install globally:
+```bash
+cp target/release/meshnet $PREFIX/bin/
+```
 
 ---
 
-## Usage Guide
+## Usage
 
-### Two-Way Interactive Mode (Recommended)
-Simply run the command with no arguments:
+### Interactive mode (recommended)
+
+Just run `meshnet` with no arguments. It starts the receiver in the background and gives you a menu:
+
 ```bash
 meshnet
 ```
-This automatically starts the receiver daemon in the background (printing your device's IP and Port) and opens an interactive prompt. From there, you can choose to send files, list devices, or manually enter an IP address to send a file to a device that mDNS couldn't discover (e.g., your Termux app).
 
-### Manual CLI Commands
-If you prefer scripting or using manual arguments:
-
-**1. Start the Receiver Daemon (Blocking)**
-```bash
-meshnet serve ~/Downloads/meshnet_files
+```
+  What would you like to do?
+  > 📤  Send a file
+    🔍  Scan for devices
+    ❌  Exit
 ```
 
-**2. Send a File to a Discovered Device**
+When sending, you will be shown a list of discovered devices. If your device isn't listed, choose **"Enter IP manually"** and type the address shown on the other device (e.g. `192.168.1.4:7878`).
+
+---
+
+### CLI commands
+
+#### `meshnet serve [PATH]`
+Start the file-receiver daemon. Saves incoming files to `PATH` (defaults to current directory).
+
 ```bash
-meshnet send --file ./my_video.mp4 --device "Sameer-MacBook"
+meshnet serve ~/Downloads
 ```
 
-**3. Send a File via Direct IP (Bypassing Discovery)**
+#### `meshnet list`
+Scan the network and print all active MeshNet devices.
+
 ```bash
-meshnet send --file ./my_video.mp4 --ip 192.168.1.15:8080
+meshnet list
+```
+
+#### `meshnet send`
+Send a file interactively. Scans for devices and lets you pick one.
+
+```bash
+meshnet send
+```
+
+#### `meshnet send --file FILE --ip IP:PORT`
+Send a file directly to a known IP, bypassing discovery.
+
+```bash
+meshnet send --file ~/Desktop/report.pdf --ip 192.168.1.4:7878
+```
+
+#### `meshnet send --file FILE --device NAME`
+Send to a device matched by name (partial match, case-insensitive).
+
+```bash
+meshnet send --file ./photo.jpg --device "pixel"
 ```
 
 ---
 
-## Updating to the Latest Version
+## Troubleshooting
 
-If you installed MeshNet by cloning from GitHub, you can easily update it to get new features and bug fixes.
+### Device not showing up in scan?
 
-**On macOS / Linux:**
+1. **Check both devices are on the same Wi-Fi** (not one on 2.4 GHz and another on 5 GHz if the router isolates them).
+2. **Android — disable VPNs** (e.g. AdGuard, Private DNS, WireGuard) before running meshnet. They block incoming TCP connections.
+3. **Use direct IP** — run `meshnet` on the receiver and note the `Address` line. Enter it manually with `Enter IP manually` in the sender's menu, or:
+   ```bash
+   meshnet send --ip 192.168.1.4:7878
+   ```
+
+### `~/path/to/file` not found?
+
+MeshNet expands `~` automatically. Make sure there is no extra space before the path and the file actually exists.
+
+---
+
+## Updating
+
+Pull the latest changes and rebuild. Run these commands inside the cloned `meshnet` folder.
+
+**macOS / Linux:**
 ```bash
-cd meshnet
 git pull origin main
 cargo build --release
-sudo mv target/release/meshnet /usr/local/bin/
+sudo cp target/release/meshnet /usr/local/bin/
 ```
 
-**On Android (Termux):**
+**Termux (Android):**
 ```bash
-cd meshnet
 git pull origin main
 cargo build --release
 cp target/release/meshnet $PREFIX/bin/
 ```
+
+---
+
+## License
+
+MIT

@@ -9,7 +9,7 @@ mod discovery;
 
 #[derive(Parser)]
 #[command(name = "meshnet")]
-#[command(about = "A local network file transfer CLI", long_about = None)]
+#[command(version, about = "Fast local-network file transfer — works on macOS, Linux & Android (Termux)")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -17,26 +17,22 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Start the receiving daemon (Blocks)
+    /// Start only the file-receiver daemon (saves files to PATH, default: current dir)
     Serve {
-        /// Optional custom directory to receive files
-        #[arg(short, long)]
+        #[arg(value_name = "PATH", help = "Directory to save received files")]
         receive_path: Option<PathBuf>,
     },
-    /// List available devices on the network
+    /// Scan the local network and list all active MeshNet devices
     List,
-    /// Send a file to a device (interactive mode if no args provided)
+    /// Send a file to another device
     Send {
-        /// Path to the file to send
-        #[arg(short, long)]
+        #[arg(short, long, value_name = "FILE", help = "Path to the file to send")]
         file: Option<PathBuf>,
-        
-        /// Device name to send to via mDNS
-        #[arg(short, long)]
+
+        #[arg(short, long, value_name = "NAME", help = "Device name (partial match)")]
         device: Option<String>,
 
-        /// Direct IP and Port to send to (e.g. 192.168.1.5:8080)
-        #[arg(short, long)]
+        #[arg(short, long, value_name = "IP:PORT", help = "Direct IP address (bypasses discovery)")]
         ip: Option<String>,
     },
 }
@@ -45,50 +41,54 @@ enum Commands {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    match &cli.command {
+    match cli.command {
         Some(Commands::Serve { receive_path }) => {
-            serve::run(receive_path.clone()).await?;
+            serve::run(receive_path).await?;
         }
         Some(Commands::List) => {
             list::run().await?;
         }
         Some(Commands::Send { file, device, ip }) => {
-            send::run(file.clone(), device.clone(), ip.clone()).await?;
+            send::run(file, device, ip).await?;
         }
         None => {
-            // Interactive Two-Way Mode
-            println!("Starting MeshNet Two-Way Interactive Mode...");
-            
-            // Start the server in the background
+            println!("\n  ███╗   ███╗███████╗███████╗██╗  ██╗███╗   ██╗███████╗████████╗");
+            println!("  ████╗ ████║██╔════╝██╔════╝██║  ██║████╗  ██║██╔════╝╚══██╔══╝");
+            println!("  ██╔████╔██║█████╗  ███████╗███████║██╔██╗ ██║█████╗     ██║   ");
+            println!("  ██║╚██╔╝██║██╔══╝  ╚════██║██╔══██║██║╚██╗██║██╔══╝     ██║   ");
+            println!("  ██║ ╚═╝ ██║███████╗███████║██║  ██║██║ ╚████║███████╗   ██║   ");
+            println!("  ╚═╝     ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝   ╚═╝   ");
+            println!("  Fast local file transfer  •  github.com/sameer92921/meshnet\n");
+
             let _serve_task = tokio::spawn(async {
                 if let Err(e) = serve::run(None).await {
-                    eprintln!("Receiver daemon error: {}", e);
+                    eprintln!("Receiver error: {}", e);
                 }
             });
 
-            // Small delay to let the server print its startup message before prompting
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(600)).await;
 
             loop {
-                let options = vec!["Send a file", "List devices", "Exit"];
-                let ans = Select::new("\nWhat would you like to do?", options).prompt();
-
-                match ans {
-                    Ok("Send a file") => {
+                let options = vec![
+                    "📤  Send a file",
+                    "🔍  Scan for devices",
+                    "❌  Exit",
+                ];
+                match Select::new("What would you like to do?", options).prompt() {
+                    Ok("📤  Send a file") => {
                         if let Err(e) = send::run(None, None, None).await {
-                            eprintln!("Error sending file: {}", e);
+                            eprintln!("\n  ✗ {}\n", e);
                         }
                     }
-                    Ok("List devices") => {
+                    Ok("🔍  Scan for devices") => {
                         if let Err(e) = list::run().await {
-                            eprintln!("Error listing devices: {}", e);
+                            eprintln!("\n  ✗ {}\n", e);
                         }
                     }
-                    Ok("Exit") | Err(_) => {
-                        println!("Exiting MeshNet...");
+                    _ => {
+                        println!("\n  Goodbye!\n");
                         break;
                     }
-                    _ => {}
                 }
             }
         }
