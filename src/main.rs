@@ -74,8 +74,8 @@ enum Commands {
                          meshnet send -f doc.pdf -d pixel"
     )]
     Send {
-        #[arg(short, long, value_name = "FILE", help = "Path to the file to send")]
-        file: Option<PathBuf>,
+        #[arg(short, long, value_name = "FILE", help = "Path to the file(s) to send", num_args(1..))]
+        file: Vec<PathBuf>,
 
         #[arg(short, long, value_name = "NAME", help = "Destination device name (partial match, case-insensitive)")]
         device: Option<String>,
@@ -147,7 +147,7 @@ async fn main() -> anyhow::Result<()> {
                 ];
                 match Select::new("What would you like to do?", options).prompt() {
                     Ok("📤  Send a file") => {
-                        if let Err(e) = send::run(None, None, None).await {
+                        if let Err(e) = send::run(vec![], None, None).await {
                             eprintln!("\n  ✗ {}\n", e);
                         }
                     }
