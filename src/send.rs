@@ -14,48 +14,26 @@ use crate::completer::FilePathCompleter;
 
 const READ_BUF_SIZE: usize = 256 * 1024; // 256 KB chunks for higher throughput
 
-pub async fn run(files: Vec<PathBuf>, device: Option<String>, ip: Option<String>) -> Result<()> {
-    let mut paths_to_send = Vec::new();
+pub async fn run(file: Option<PathBuf>, device: Option<String>, ip: Option<String>) -> Result<()> {
+    let file_path = match file {
+        Some(p) => expand_tilde(p),
+        None => {
+            let cwd = std::env::current_dir()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
+            let raw = Text::new(&format!("File to send (cwd: {}):", cwd))
+                .with_help_message("Tab to autocomplete • ~ for home directory")
+                .with_autocomplete(FilePathCompleter)
+                .prompt()?;
+            expand_tilde(PathBuf::from(raw.trim()))
+        }
+    };
 
-    if files.is_empty() {
-        let cwd = std::env::current_dir()
-            .map(|p| p.display().to_string())
-            .unwrap_or_default();
-        let raw = Text::new(&format!("File(s) to send (cwd: {}):", cwd))
-            .with_help_message("Tab to autocomplete • ~ for home • * for wildcards")
-            .with_autocomplete(FilePathCompleter)
-            .prompt()?;
-            
-        let raw_trimmed = raw.trim();
-        if raw_trimmed.is_empty() {
-            anyhow::bail!("No file specified");
-        }
-        
-        if raw_trimmed.contains('*') || raw_trimmed.contains('?') {
-            let expanded = expand_tilde(PathBuf::from(raw_trimmed));
-            let pattern = expanded.to_str().unwrap_or_default();
-            if let Ok(paths) = glob::glob(pattern) {
-                for entry in paths {
-                    if let Ok(path) = entry {
-                        if path.is_file() {
-                            paths_to_send.push(path);
-                        }
-                    }
-                }
-            }
-        } else {
-            paths_to_send.push(expand_tilde(PathBuf::from(raw_trimmed)));
-        }
-    } else {
-        for f in files {
-            paths_to_send.push(expand_tilde(f));
-        }
+    if !file_path.exists() {
+        anyhow::bail!("File not found: {}", file_path.display());
     }
-
-    paths_to_send.retain(|p| p.is_file());
-
-    if paths_to_send.is_empty() {
-        anyhow::bail!("No valid files found to send.");
+    if !file_path.is_file() {
+        anyhow::bail!("Not a file: {}", file_path.display());
     }
 
     let target = if let Some(ip_str) = ip {
@@ -107,13 +85,7 @@ pub async fn run(files: Vec<PathBuf>, device: Option<String>, ip: Option<String>
         }
     };
 
-    for path in paths_to_send {
-        if let Err(e) = transfer_file(path, target.clone()).await {
-            eprintln!("  ✗ Failed to send: {}", e);
-        }
-    }
-
-    Ok(())
+    transfer_file(file_path, target).await
 }
 
 fn parse_ip_device(raw: &str) -> Result<FoundDevice> {
