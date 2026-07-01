@@ -15,27 +15,30 @@ use crate::completer::FilePathCompleter;
 const READ_BUF_SIZE: usize = 256 * 1024; // 256 KB chunks for higher throughput
 
 pub async fn run(file: Option<PathBuf>, device: Option<String>, ip: Option<String>) -> Result<()> {
-    let file_path = match file {
-        Some(p) => expand_tilde(p),
+    // Resolve the file argument into one or more paths (supports globs like *.pdf)
+    let paths = match file {
+        Some(p) => resolve_paths(&p.to_string_lossy())?,
         None => {
             let cwd = std::env::current_dir()
                 .map(|p| p.display().to_string())
                 .unwrap_or_default();
-            let raw = Text::new(&format!("File to send (cwd: {}):", cwd))
-                .with_help_message("Tab to autocomplete • ~ for home directory")
+            let raw = Text::new(&format!("File(s) to send (cwd: {}):", cwd))
+                .with_help_message("Tab to autocomplete • ~ for home • wildcards: *.pdf, ~/Photos/*")
                 .with_autocomplete(FilePathCompleter)
                 .prompt()?;
-            expand_tilde(PathBuf::from(raw.trim()))
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                anyhow::bail!("No file specified");
+            }
+            resolve_paths(trimmed)?
         }
     };
 
-    if !file_path.exists() {
-        anyhow::bail!("File not found: {}", file_path.display());
-    }
-    if !file_path.is_file() {
-        anyhow::bail!("Not a file: {}", file_path.display());
+    if paths.is_empty() {
+        anyhow::bail!("No files matched the pattern.");
     }
 
+    // Pick the target device once, then send all files to it
     let target = if let Some(ip_str) = ip {
         parse_ip_device(&ip_str)?
     } else if let Some(name) = device {
@@ -85,7 +88,58 @@ pub async fn run(file: Option<PathBuf>, device: Option<String>, ip: Option<Strin
         }
     };
 
-    transfer_file(file_path, target).await
+    if paths.len() > 1 {
+        println!("\n  Sending {} files...", paths.len());
+    }
+
+    let mut failed = 0u32;
+    for (i, path) in paths.iter().enumerate() {
+        if paths.len() > 1 {
+            println!("  [{}/{}]", i + 1, paths.len());
+        }
+        if let Err(e) = transfer_file(path.clone(), target.clone()).await {
+            eprintln!("  ✗ {}: {}", path.display(), e);
+            failed += 1;
+        }
+    }
+
+    if failed > 0 {
+        anyhow::bail!("{} of {} file(s) failed to send.", failed, paths.len());
+    }
+
+    Ok(())
+}
+
+/// Expand tilde and glob patterns into a list of real file paths.
+/// If the input has no wildcards, validates that the single path exists and is a file.
+fn resolve_paths(input: &str) -> Result<Vec<PathBuf>> {
+    let expanded = expand_tilde(PathBuf::from(input));
+    let s = expanded.to_string_lossy();
+
+    if s.contains('*') || s.contains('?') {
+        // Glob mode
+        let matched: Vec<PathBuf> = glob::glob(&s)
+            .map_err(|e| anyhow::anyhow!("Invalid pattern '{}': {}", input, e))?
+            .filter_map(|entry| entry.ok())
+            .filter(|p| p.is_file())
+            .collect();
+
+        if matched.is_empty() {
+            anyhow::bail!("No files matched pattern: {}", input);
+        }
+
+        println!("  Matched {} file(s).", matched.len());
+        Ok(matched)
+    } else {
+        // Single file mode — keep clear error messages
+        if !expanded.exists() {
+            anyhow::bail!("File not found: {}", expanded.display());
+        }
+        if !expanded.is_file() {
+            anyhow::bail!("Not a file: {}", expanded.display());
+        }
+        Ok(vec![expanded])
+    }
 }
 
 fn parse_ip_device(raw: &str) -> Result<FoundDevice> {
